@@ -23,11 +23,16 @@ class InputEmbedding(nn.Module):
         context_length: int,
         drop_rate: float = 0.1,
     ):
-        super().__init__()
+        super().__init__() # super().__init__()은 부모 클래스(torch.nn.Module)의 초기화 메서드를 실행하는 코드
         self.emb_dim = emb_dim
         self.context_length = context_length
         # TODO: token_embedding, position_embedding, dropout을 정의하세요.
-        raise NotImplementedError("InputEmbedding.__init__을 구현하세요.")
+        self.vocab_size = vocab_size
+        self.drop_rate = drop_rate
+        
+        self.token_embedding_layer = torch.nn.Embedding(self.vocab_size, self.emb_dim)
+        self.pos_embedding_layer = torch.nn.Embedding(self.context_length, self.emb_dim)
+        self.dropout = torch.nn.Dropout(drop_rate)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -39,4 +44,10 @@ class InputEmbedding(nn.Module):
         Returns:
             (batch_size, seq_len, emb_dim)
         """
-        raise NotImplementedError("InputEmbedding.forward를 구현하세요.")
+        # 여기 코드 복습 + 정리하기
+        token_embeddings = self.token_embedding_layer(x)
+        pos_embeddings = self.pos_embedding_layer(torch.arange(x.shape[1], device = x.device))
+
+        input_embeddings = token_embeddings + pos_embeddings
+        input_embeddings = self.dropout(input_embeddings)
+        return input_embeddings
