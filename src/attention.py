@@ -69,13 +69,11 @@ class MultiHeadAttention(nn.Module):
         if causal_mask:
             mask = torch.triu(torch.ones(num_tokens, num_tokens, device=x.device), diagonal=1).bool()
             attn_score = attn_score.masked_fill_(mask, -torch.inf)
-        
-        attn_weights = torch.softmax(attn_score / keys.shape[-1] ** 0.5, dim = -1)
 
+        attn_weights = torch.softmax(attn_score / keys.shape[-1] ** 0.5, dim = -1)
         attn_weights = self.dropout(attn_weights)
 
         context_vec = (attn_weights @ values).transpose(1, 2)
-
         context_vec = context_vec.contiguous().view(b, num_tokens, d_model)
 
         context_vec = self.out_proj(context_vec)
