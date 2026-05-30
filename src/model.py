@@ -137,7 +137,9 @@ class GPTModel(nn.Module):
         """
         seq_len = idx.shape[1]
         tok_embeds = self.tok_emb(idx)
+        
         pos_embeds = self.pos_emb(torch.arange(seq_len, device=idx.device))
+        
         x = tok_embeds + pos_embeds
         x = self.drop_emb(x)
         x = self.trf_blocks(x)
@@ -154,4 +156,15 @@ def generate_text_simple(
     context_size: int,
 ) -> torch.Tensor:
     """TODO: greedy 방식으로 max_new_tokens만큼 다음 토큰을 이어 붙입니다."""
+    for _ in range(max_new_tokens):
+        input_ids = idx[:, -context_size:] # 최근 문맥만 보존
+        with torch.no_grad(): # 추론시 계산 추적 off
+            logits = model(input_ids)
+            
+        logits = logits[:, -1, :]
+        probabilities = torch.softmax(logits, dim=-1)
+        idx_next = torch.argmax(probabilities, dim=-1, keepdim=True)
+        idx = torch.cat((idx, idx_next), dim=1) # 토큰을 시퀸스 끝에 이어붙이기
+        
+    return idx
     raise NotImplementedError("generate_text_simple을 구현하세요.")
