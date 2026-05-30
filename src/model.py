@@ -23,7 +23,11 @@ class LayerNorm(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """TODO: 마지막 차원의 평균과 분산으로 정규화한 뒤 gamma/beta를 적용합니다."""
-        raise NotImplementedError("LayerNorm.forward를 구현하세요.")
+        mean = x.mean(dim=-1, keepdim=True)
+        var = x.var(dim=-1, keepdim=True, unbiased=False)
+        norm_x = (x - mean) / torch.sqrt(var + self.eps)
+
+        return self.gamma * norm_x + self.beta
 
 
 class GELU(nn.Module):
@@ -31,7 +35,10 @@ class GELU(nn.Module):
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """TODO: tanh 근사식 또는 torch 연산으로 GELU를 구현합니다."""
-        raise NotImplementedError("GELU.forward를 구현하세요.")
+        return 0.5 * x * (1 + torch.tanh(
+            torch.sqrt(torch.tensor(2.0 / torch.pi)) *
+            (x + 0.044715 * torch.pow(x, 3))
+            ))
 
 
 class FeedForward(nn.Module):
@@ -40,11 +47,15 @@ class FeedForward(nn.Module):
     def __init__(self, d_model: int, dropout: float = 0.1, mult: int = 4):
         super().__init__()
         # TODO: d_model -> mult*d_model -> d_model 구조의 작은 MLP를 정의하세요.
-        raise NotImplementedError("FeedForward.__init__을 구현하세요.")
+        self.layers = nn.Sequential(
+            nn.Linear(d_model, mult * d_model),
+            GELU(),
+            nn.Linear(mult * d_model, d_model)
+        )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """TODO: FeedForward 네트워크를 통과시킵니다."""
-        raise NotImplementedError("FeedForward.forward를 구현하세요.")
+        return self.layers(x)
 
 
 class TransformerBlock(nn.Module):
@@ -62,10 +73,32 @@ class TransformerBlock(nn.Module):
     ):
         super().__init__()
         # TODO: attention, ffn, layernorm, dropout을 정의하세요.
-        raise NotImplementedError("TransformerBlock.__init__을 구현하세요.")
+        self.att = MultiHeadAttention(
+            d_model=d_model,
+            n_heads=n_heads,
+            drop_rate=drop_rate,
+            qkv_bias=qkv_bias,
+        )
+        self.ff = FeedForward(d_model, dropout=drop_rate)
+        self.norm1 = LayerNorm(d_model)
+        self.norm2 = LayerNorm(d_model)
+        self.drop_shortcut = nn.Dropout(drop_rate)
 
     def forward(self, x: torch.Tensor, causal_mask: bool = True) -> torch.Tensor:
         """TODO: attention과 ffn을 residual connection으로 연결합니다."""
+        # 어텐션 블록을 위한 숏컷
+        shortcut = x
+        x = self.norm1(x)
+        x = self.att(x)
+        x = self.drop_shortcut(x)
+        x = x + shortcut
+        
+        # 피드 포워드 신경망을 위한 숏컷
+        shortcut = x
+        x = self.ff(x)
+        x = self.drop_shortcut(x)
+        x = x + shortcut
+        return x
         raise NotImplementedError("TransformerBlock.forward를 구현하세요.")
 
 
@@ -76,7 +109,19 @@ class GPTModel(nn.Module):
         super().__init__()
         self.config = config
         # TODO: embedding, blocks, final layernorm, lm_head를 정의하세요.
-        raise NotImplementedError("GPTModel.__init__을 구현하세요.")
+        self.tok_emb = nn.Embedding(config["vocab_size"], config["emb_dim"])
+        self.pos_emb = nn.Embedding(config["context_length"], config["emb_dim"])
+        self.drop_emb = nn.Dropout(config["drop_rate"])
+        self.trf_blocks = nn.Sequential(
+            *[TransformerBlock(
+                d_model=config["emb_dim"],
+                n_heads=config["n_heads"],
+                drop_rate=config["drop_rate"],
+                qkv_bias=config["qkv_bias"],
+            ) for _ in range(config["n_layers"])]
+        )
+        self.final_norm = LayerNorm(config["emb_dim"])
+        self.out_head = nn.Linear(config["emb_dim"], config["vocab_size"], bias=False)
 
     def forward(
         self,
@@ -85,11 +130,20 @@ class GPTModel(nn.Module):
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         """
         TODO: logits를 만들고, targets가 있으면 cross entropy loss도 함께 반환합니다.
-
+        
         Returns:
             targets가 None이면 logits
             targets가 있으면 (loss, logits)
         """
+        seq_len = idx.shape[1]
+        tok_embeds = self.tok_emb(idx)
+        pos_embeds = self.pos_emb(torch.arange(seq_len, device=idx.device))
+        x = tok_embeds + pos_embeds
+        x = self.drop_emb(x)
+        x = self.trf_blocks(x)
+        x = self.final_norm(x)
+        logits = self.out_head(x)
+        return logits
         raise NotImplementedError("GPTModel.forward를 구현하세요.")
 
 
