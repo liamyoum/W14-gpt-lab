@@ -86,8 +86,7 @@ class MultiHeadAttention(nn.Module):
         # attention weight로 value를 가중합해 문맥 벡터를 만든다.
         context_vector = attn_weights @ value
         # head를 다시 합쳐 (B, T, C)로 되돌린 뒤 최종 projection을 적용한다.
-        context_vector = context_vector.transpose(1, 2)
-        context_vector.view(batch_size, seq_len, self.d_model)
+        context_vector = context_vector.transpose(1, 2).reshape(batch_size, seq_len, self.d_model)
         context_vector = self.out_proj(context_vector)
         
         return context_vector
