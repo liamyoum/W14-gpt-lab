@@ -27,10 +27,16 @@ class MultiHeadAttention(nn.Module):
         super().__init__()
         if d_model % n_heads != 0:
             raise ValueError("d_model must be divisible by n_heads")
-        self.d_model = d_model
-        self.n_heads = n_heads
-        self.head_dim = d_model // n_heads
+        self.d_model = d_model                  # 전체 임베딩 벡터 차원 (예: 768)
+        self.n_heads = n_heads                  # attention head 개수 (예: 12)
+        self.head_dim = d_model // n_heads      # head 하나당 차원 (예: 768/12 = 64)
         # TODO: qkv projection, output projection, dropout을 정의하세요.
+        # 가중치 초기화
+        self.W_query = torch.nn.parameter(torch.rand(self.d_model, self.d_model), requires_grad=True)
+        self.W_key = torch.nn.parameter(torch.rand(self.d_model, self.d_model), requires_grad=True)
+        self.W_value = torch.nn.parameter(torch.rand(self.d_model, self.d_model), requires_grad=True)
+        self.dropout = nn.Dropout(drop_rate)
+        
         raise NotImplementedError("MultiHeadAttention.__init__을 구현하세요.")
 
     def forward(
@@ -47,4 +53,16 @@ class MultiHeadAttention(nn.Module):
             causal_mask: True이면 미래 위치를 볼 수 없게 mask 처리
             return_attention_weights: True이면 attention weight도 함께 반환
         """
+        # qkv 벡터 계산
+        query = torch.matmul(x, self.W_query)
+        key = torch.matmul(x, self.W_key)
+        value = torch.matmul(x, self.W_value)
+        
+        # calculate attention score, attantion weights, context vector
+        attn_score = query @ key.transpose(-2, -1)
+        attn_weights = torch.softmax(attn_score / key.shape**0.5, dim=-1)
+        context_vector = attn_weights @ value
+        
+        return context_vector
+        
         raise NotImplementedError("MultiHeadAttention.forward를 구현하세요.")
