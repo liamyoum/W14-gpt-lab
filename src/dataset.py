@@ -63,13 +63,13 @@ def create_dataloader(
     num_workers: int = 0,
 ) -> DataLoader:
     """TODO: GPTDataset을 만들고 torch.utils.data.DataLoader로 감싸 반환합니다."""
-
+    # GPTDataset의 각 샘플은 (input_ids, target_ids) 형태입니다.
     data_set = GPTDataset(token_ids, context_length, stride)
-    return torch.utils.data.DataLoader(dataset = data_set, 
-                                       batch_size = batch_size,
-                                       shuffle = shuffle,
-                                       drop_last = drop_last,
-                                       num_workers = num_workers)
+    # DataLoader가 이런 샘플들을 batch_size개씩 묶어서 (input_batch, target_batch) 텐서로 반환합니다.
+    return torch.utils.data.DataLoader(dataset=data_set,
+                                       batch_size=batch_size,
+                                       shuffle=shuffle,
+                                       drop_last=drop_last,
+                                       num_workers=num_workers)
     
     raise NotImplementedError("create_dataloader를 구현하세요.")
-
