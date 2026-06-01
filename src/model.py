@@ -132,8 +132,7 @@ class GPTModel(nn.Module):
         x = self.final_layernorm(x)
         logits = self.lm_head(x)
         if targets is not None:
-            cross_entropy_loss = nn.CrossEntropyLoss()
-            loss = cross_entropy_loss(logits.reshape(-1, logits.size(-1)), targets.reshape(-1))
+            loss = nn.functional.cross_entropy(logits.reshape(-1, logits.size(-1)), targets.reshape(-1))
             return (loss, logits)
         
         return logits
