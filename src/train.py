@@ -163,7 +163,7 @@ def generate_and_print_sample(
         top_k=top_k,  # 후보를 상위 k개로 제한하는 옵션.
     )
 
-    decoded_text = tokenizer.decode(out[0].tolist())  # batch 첫 번째 결과를 token id 리스트로 꺼내 문자열로 복원한다.
+    decoded_text = tokenizer.decode(out[0].tolist(), errors="replace")  # batch 첫 번째 결과를 token id 리스트로 꺼내 문자열로 복원한다.
     print(decoded_text)  # 학습 중간에 모델이 어떤 문장을 만드는지 확인한다.
 
     model.train()  # 학습 루프 중 호출될 수 있으니 다시 train 모드로 돌려놓는다.

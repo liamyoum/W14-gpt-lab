@@ -226,7 +226,7 @@ class BPETokenizer:
             byteIdSe = [self.get_bos_id()] + byteIdSe + [self.get_eos_id()] # 앞에는 <bos>, 뒤에는 <eos> token id를 추가
 
         return byteIdSe                                       # 최종 token id 리스트를 반환; GPT 모델 입력으로 사용할 수 있는 숫자 sequence
-    def decode(self, ids: list[int], skip_special: bool = True) -> str:
+    def decode(self, ids: list[int], skip_special: bool = True, errors: str = "strict",) -> str:
         """
         TODO: token ID 리스트를 문자열로 복원합니다.
 
@@ -259,4 +259,4 @@ class BPETokenizer:
         for token_id in ids:                                   # 입력으로 들어온 token id sequence를 왼쪽부터 하나씩 처리
             byte_values.extend(token_to_bytes(token_id))       # 각 token id를 byte 값들로 풀고 전체 byte 리스트에 이어 붙임
 
-        return bytes(byte_values).decode("utf-8")              # 한글은 여러 byte로 이루어지므로 byte를 전부 모은 뒤 마지막에 한 번만 UTF-8 decode
+        return bytes(byte_values).decode("utf-8", errors=errors)              # 한글은 여러 byte로 이루어지므로 byte를 전부 모은 뒤 마지막에 한 번만 UTF-8 decode
