@@ -140,7 +140,7 @@ def generate_and_print_sample(
     context_size: int = 256,
     temperature: float = 0.8,
     top_k: int | None = 40,
-) -> None:
+) -> str:
     """학습 정도를 확인하기 위해 학습 도중 일정 step마다 생성 샘플을 출력한다."""
     model.eval()
     
@@ -161,9 +161,11 @@ def generate_and_print_sample(
     text = tokenizer.decode(token_ids[0].tolist())
     
     # 텍스트의 줄바꿈을 제거해 한 줄로 만든다.
-    print(text.replace("\n", " "))
+    clean_text = text.replace("\n", " ")
+    print(clean_text)
     
     model.train()
+    return clean_text
 
 
 def train_model(
@@ -178,15 +180,23 @@ def train_model(
     start_context: str,
     tokenizer,
     ckpt_freq: int | None = None,
+    checkpoint_dir: str | Path | None = None,
     start_epoch: int = 0,                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              
     global_step: int = 0,
-) -> list[float]:
-    """사전 학습 루프를 구현하고 epoch별 train loss 리스트를 반환합니다."""
+) -> tuple[list[float], list[float], list[int], list[dict[str, int | str]]]:
+    """사전 학습 루프를 돌리고 train/val loss, tokens seen, 생성 샘플을 반환합니다."""
     # 손실, 처리한 토큰 리스트 초기화.
     train_losses, val_losses, track_tokens_seen = [], [], []
+    sample_texts: list[dict[str, int | str]] = []
     token_seen = 0
+    best_val_loss = float("inf")
+    last_epoch = start_epoch - 1
+    checkpoint_dir = Path(checkpoint_dir) if checkpoint_dir is not None else None
+    if checkpoint_dir is not None:
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
     
     for epoch in range(start_epoch, num_epochs):
+        last_epoch = epoch
         model.train()
         # 모델의 사전훈련을 시행한다.
         for input_batch, target_batch in train_loader:
@@ -213,28 +223,66 @@ def train_model(
                     f"train loss {train_loss:.3f}, "
                     f"val loss {val_loss:.3f}"
                     )
+                if checkpoint_dir is not None and val_loss < best_val_loss:
+                    best_val_loss = val_loss
+                    save_checkpoint(model, optimizer, epoch, global_step, str(checkpoint_dir / "best.pt"))
                 model.train()
             # 체크포인트를 저장한다.
             if ckpt_freq is not None and global_step % ckpt_freq == 0:
-                ckpt_dir = Path("checkpoints")
+                ckpt_dir = checkpoint_dir if checkpoint_dir is not None else Path("checkpoints")
                 ckpt_dir.mkdir(exist_ok=True)
                 ckpt_path = ckpt_dir / f"checkpoint_step_{global_step}.pt"
                 save_checkpoint(model, optimizer, epoch, global_step, str(ckpt_path))
 
         # 각 epoch 후 샘플 텍스트를 출력한다.
-        generate_and_print_sample(model, tokenizer, device, start_context)
+        sample_text = generate_and_print_sample(model, tokenizer, device, start_context)
+        sample_texts.append(
+            {
+                "epoch": epoch + 1,
+                "global_step": global_step,
+                "sample_text": sample_text,
+            }
+        )
     
-    return train_losses
+    if checkpoint_dir is not None:
+        save_checkpoint(model, optimizer, last_epoch, global_step, str(checkpoint_dir / "last.pt"))
+        best_path = checkpoint_dir / "best.pt"
+        if not best_path.exists():
+            save_checkpoint(model, optimizer, last_epoch, global_step, str(best_path))
+
+    return train_losses, val_losses, track_tokens_seen, sample_texts
             
     
 
-def plot_losses(train_losses: list[float], val_losses: list[float] | None = None) -> None:
-    """훈련/검증 손실 그래프를 그리는 제공 함수."""
-    plt.plot(train_losses, label="Train")
+def plot_losses(
+    x_values_or_train_losses: list[float] | list[int],
+    train_losses_or_val_losses: list[float] | None = None,
+    val_losses: list[float] | None = None,
+    output_path: str | Path | None = None,
+) -> None:
+    """훈련/검증 손실 그래프를 그리고, 필요하면 파일로 저장합니다."""
+    if val_losses is None:
+        x_values = list(range(1, len(x_values_or_train_losses) + 1))
+        train_losses = x_values_or_train_losses
+        val_losses = train_losses_or_val_losses
+        xlabel = "Step"
+    else:
+        x_values = x_values_or_train_losses
+        train_losses = train_losses_or_val_losses
+        xlabel = "Tokens Seen"
+
+    plt.figure()
+    plt.plot(x_values, train_losses, label="Train")
     if val_losses is not None:
-        plt.plot(val_losses, label="Val")
-    plt.xlabel("Epoch")
+        plt.plot(x_values, val_losses, label="Val")
+    plt.xlabel(xlabel)
     plt.ylabel("Loss")
     plt.legend()
     plt.title("Training / Validation Loss")
+    if output_path is not None:
+        output_path = Path(output_path)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        plt.savefig(output_path, bbox_inches="tight")
+        plt.close()
+        return
     plt.show()

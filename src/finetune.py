@@ -156,7 +156,11 @@ class GPTForSequenceClassification(nn.Module):
         x = self.gpt.drop_emb(x)
         x = self.gpt.trf_blocks(x)
         x = self.gpt.final_norm(x)
-        logits = self.classifier(self.dropout(x[:, -1, :]))
+
+        # padding을 제외한 마지막 토큰 hidden state를 문장 표현으로 사용합니다.
+        last_idx = input_ids.ne(0).sum(dim=1).sub(1).clamp(min=0)
+        pooled = x[torch.arange(x.size(0), device=x.device), last_idx]
+        logits = self.classifier(self.dropout(pooled))
 
         if labels is None:
             return logits

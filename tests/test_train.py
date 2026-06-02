@@ -28,6 +28,22 @@ GPT_CONFIG_SMALL = {
 }
 
 
+class TinyTokenizer:
+    """train_model smoke test용 아주 작은 tokenizer."""
+
+    def encode(self, text, add_bos_eos=False):
+        ids = [(ord(ch) % 50) + 4 for ch in text]
+        if add_bos_eos:
+            return [2] + ids + [3]
+        return ids
+
+    def decode(self, ids):
+        return " ".join(str(token_id) for token_id in ids)
+
+    def get_eos_id(self):
+        return 3
+
+
 # =============================================================================
 # calc_loss_batch
 # =============================================================================
@@ -157,3 +173,60 @@ class TestPlotLosses:
 
         plot_losses([0.5, 0.4, 0.3], [0.6, 0.5, 0.4])
         # 시각화만 하므로 예외 없으면 통과
+
+    def test_plot_losses_saves_png(self):
+        """output_path를 주면 loss 그래프 PNG 파일을 저장하는지 확인한다."""
+        from train import plot_losses
+
+        with tempfile.TemporaryDirectory() as tmp:
+            output_path = Path(tmp) / "loss.png"
+            plot_losses([10, 20, 30], [0.5, 0.4, 0.3], [0.6, 0.5, 0.4], output_path=output_path)
+            assert output_path.exists()
+
+
+class TestTrainModel:
+    """train_model의 확장 반환값과 체크포인트 저장을 확인한다."""
+
+    def test_train_model_returns_metrics_and_saves_checkpoints(self):
+        """train_model()이 train/val loss, tokens seen, sample text를 반환하고 best/last checkpoint를 저장하는지 확인한다."""
+        from dataset import create_dataloader
+        from model import GPTModel
+        from train import train_model
+
+        model = GPTModel(GPT_CONFIG_SMALL)
+        train_loader = create_dataloader(
+            list(range(300)),
+            context_length=16,
+            batch_size=4,
+            shuffle=False,
+        )
+        val_loader = create_dataloader(
+            list(range(300, 500)),
+            context_length=16,
+            batch_size=4,
+            shuffle=False,
+        )
+        optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            checkpoint_dir = Path(tmp) / "checkpoints"
+            train_losses, val_losses, tokens_seen, sample_texts = train_model(
+                model=model,
+                train_loader=train_loader,
+                val_loader=val_loader,
+                optimizer=optimizer,
+                device=torch.device("cpu"),
+                num_epochs=1,
+                eval_freq=1,
+                eval_iter=1,
+                start_context="테스트",
+                tokenizer=TinyTokenizer(),
+                ckpt_freq=10,
+                checkpoint_dir=checkpoint_dir,
+            )
+
+            assert len(train_losses) >= 1
+            assert len(train_losses) == len(val_losses) == len(tokens_seen)
+            assert sample_texts and "sample_text" in sample_texts[0]
+            assert (checkpoint_dir / "best.pt").exists()
+            assert (checkpoint_dir / "last.pt").exists()
