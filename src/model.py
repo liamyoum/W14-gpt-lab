@@ -99,7 +99,6 @@ class TransformerBlock(nn.Module):
         x = self.drop_shortcut(x)
         x = x + shortcut
         return x
-        raise NotImplementedError("TransformerBlock.forward를 구현하세요.")
 
 
 class GPTModel(nn.Module):
@@ -145,8 +144,11 @@ class GPTModel(nn.Module):
         x = self.trf_blocks(x)
         x = self.final_norm(x)
         logits = self.out_head(x)
-        return logits
-        raise NotImplementedError("GPTModel.forward를 구현하세요.")
+        if targets is not None:
+            loss = torch.nn.functional.cross_entropy(logits.flatten(0, 1), targets.flatten())
+            return loss, logits
+        else:
+            return logits
 
 
 def generate_text_simple(
@@ -167,4 +169,3 @@ def generate_text_simple(
         idx = torch.cat((idx, idx_next), dim=1) # 토큰을 시퀸스 끝에 이어붙이기
         
     return idx
-    raise NotImplementedError("generate_text_simple을 구현하세요.")

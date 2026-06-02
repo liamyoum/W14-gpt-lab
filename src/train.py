@@ -5,7 +5,6 @@ from pathlib import Path
 
 import matplotlib.pyplot as plt
 import torch
-from bpe.py import decode
 
 try:
     from .model import GPTModel

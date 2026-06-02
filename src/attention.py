@@ -88,5 +88,7 @@ class MultiHeadAttention(nn.Module):
         # head를 다시 합쳐 (B, T, C)로 되돌린 뒤 최종 projection을 적용한다.
         context_vector = context_vector.transpose(1, 2).reshape(batch_size, seq_len, self.d_model)
         context_vector = self.out_proj(context_vector)
-        
+
+        if return_attention_weights:
+            return context_vector, attn_weights
         return context_vector
