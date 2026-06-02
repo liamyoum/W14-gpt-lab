@@ -220,7 +220,7 @@ def plot_losses(train_losses: list[float], val_losses: list[float] | None = None
     plt.plot(train_losses, label="Train")
     if val_losses is not None:
         plt.plot(val_losses, label="Val")
-    plt.xlabel("Epoch")
+    plt.xlabel("Evaluation step")
     plt.ylabel("Loss")
     plt.legend()
     plt.title("Training / Validation Loss")
