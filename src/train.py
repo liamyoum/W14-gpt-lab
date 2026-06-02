@@ -154,7 +154,7 @@ def generate_and_print_sample(
     with torch.no_grad():
         token_ids = generate(model, encoded, max_new_tokens, context_size, temperature, top_k)
 
-    decoded_text = tokenizer.decode(token_ids[0].tolist())
+    decoded_text = tokenizer.decode(token_ids[0].tolist(), errors="replace")
     print(decoded_text.replace("\n", " "))
     if was_training:
         model.train()

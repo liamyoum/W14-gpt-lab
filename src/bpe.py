@@ -198,7 +198,7 @@ class BPETokenizer:
 
         return token_ids
 
-    def decode(self, ids: list[int], skip_special: bool = True) -> str:
+    def decode(self, ids: list[int], skip_special: bool = True, errors: str = "strict") -> str:
         """
         TODO: token ID 리스트를 문자열로 복원합니다.
 
@@ -232,4 +232,4 @@ class BPETokenizer:
             byte_parts.append(expand(token))
                 
         merged_bytes = b"".join(byte_parts) # bytes 객체들을 하나로 연결
-        return merged_bytes.decode("utf-8")
+        return merged_bytes.decode("utf-8", errors=errors)
