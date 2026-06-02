@@ -13,6 +13,16 @@ except ImportError:
     from model import GPTModel
 
 
+import random
+import sys
+
+ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+    
+from download_data import _read_nsmc_tsv, _write_jsonl
+
+
 def make_sentiment_dataset(
     train_tsv_path: str | Path,
     test_tsv_path: str | Path | None = None,
@@ -26,7 +36,43 @@ def make_sentiment_dataset(
     반환 형식:
         [{"text": "리뷰", "label": 0 또는 1}, ...]
     """
-    raise NotImplementedError("make_sentiment_dataset을 구현하세요.")
+    # NSMC 원본 train TSV 파일을 읽어서 [{"text": 리뷰문장, "label": 0 또는 1}, ...] 형태의 리스트로 변환
+    train_rows = _read_nsmc_tsv(train_tsv_path)
+    # NSMC 원본 test TSV 파일도 같은 형식의 리스트로 변환
+    test_rows = _read_nsmc_tsv(test_tsv_path)
+
+    # seed를 고정한 독립적인 랜덤 생성기를 만듦. 같은 seed를 쓰면 매번 같은 방식으로 섞이므로 train/val split이 재현 가능해짐
+    rng = random.Random(seed)
+    # train 데이터를 무작위로 섞음. 이 뒤에서 앞쪽 일부를 validation으로 떼어낼 것이므로, 원본 순서 편향 없이 train/validation을 나누기 위한 과정
+    rng.shuffle(train_rows)
+
+    # train 데이터 전체 개수에 val_ratio를 곱해서 validation 데이터 개수를 계산
+    val_size = int(len(train_rows) * val_ratio)
+    if len(train_rows) > 0 and val_ratio > 0: # 데이터가 존재하고 validation 비율이 양수라면 최소 1개는 validation으로 둔다.
+        val_size = max(1, val_size)
+    val_size = min(val_size, len(train_rows)) # validation 샘플 수가 전체 train 샘플 수를 넘지 않도록 제한한다.
+
+    val_data = train_rows[:val_size]
+    train_data = train_rows[val_size:]
+    test_data = test_rows
+
+    # 저장 경로가 주어지면 해당 폴더를 생성한다. 이미 있으면 그대로 사용한다.
+    if output_dir is not None: # output_dir가 지정된 경우에만 train/val/test 데이터를 파일로 저장
+        output_dir = Path(output_dir) # 문자열 경로가 들어와도 Path 객체로 바꿔서 경로 연산을 쉽게 한다.
+
+        # 저장할 폴더가 없으면 새로 만든다.
+        # parents=True: 중간 폴더까지 같이 만든다.
+        # exist_ok=True: 이미 폴더가 있어도 에러를 내지 않는다.
+        output_dir.mkdir(parents = True, exist_ok = True)
+
+        # output_dir 아래에 train/val/test jsonl 파일을 저장한다.
+        # Path 객체에서 / 는 하위 경로를 붙이는 연산자다.
+        _write_jsonl(output_dir / "nsmc_sentiment_train.jsonl", train_data)
+        _write_jsonl(output_dir / "nsmc_sentiment_val.jsonl", val_data)
+        _write_jsonl(output_dir / "nsmc_sentiment_test.jsonl", test_data)
+
+    return train_data, val_data, test_data
+
 
 
 class ReviewSentimentDataset(Dataset):
