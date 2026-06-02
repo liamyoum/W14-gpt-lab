@@ -211,7 +211,7 @@ class BPETokenizer:
         raise NotImplementedError("BPETokenizer.encode를 구현하세요.")
 
     
-    def decode(self, ids: list[int], skip_special: bool = True) -> str:
+    def decode(self, ids: list[int], skip_special: bool = True, errors: str = "strict") -> str:
         """
         TODO: token ID 리스트를 문자열로 복원합니다.
 
@@ -239,7 +239,7 @@ class BPETokenizer:
             append_token_bytes(token_id)
 
         # 3. 루프가 끝난 뒤, 모인 전체 bytes를 한 번에 .decode("utf-8")로 문자열 복원.
-        result = byte_buffer.decode("utf-8")
+        result = byte_buffer.decode("utf-8", errors=errors)
         return result
         raise NotImplementedError("BPETokenizer.decode를 구현하세요.")
 

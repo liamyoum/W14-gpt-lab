@@ -19,11 +19,6 @@ QKV_BIAS="${QKV_BIAS:-false}"
 BATCH_SIZE="${BATCH_SIZE:-16}"
 DEVICE="${DEVICE:-auto}"
 
-QKV_BIAS_FLAG=()
-if [[ "$QKV_BIAS" == "true" ]]; then
-  QKV_BIAS_FLAG+=(--qkv-bias)
-fi
-
 if [[ ! -f "$VOCAB_PATH" ]]; then
   echo "vocab 파일이 없습니다: $VOCAB_PATH"
   echo "먼저 bash scripts/build_vocab_light.sh 를 실행하세요."
@@ -36,17 +31,24 @@ if [[ ! -f "$FINETUNED_CHECKPOINT" ]]; then
   exit 1
 fi
 
-"$PYTHON_BIN" run_test_eval.py \
-  --test-path "$TEST_PATH" \
-  --vocab-path "$VOCAB_PATH" \
-  --finetuned-checkpoint "$FINETUNED_CHECKPOINT" \
-  --artifact-dir "$ARTIFACT_DIR" \
-  --vocab-size "$VOCAB_SIZE" \
-  --context-length "$CONTEXT_LENGTH" \
-  --emb-dim "$EMB_DIM" \
-  --n-heads "$N_HEADS" \
-  --n-layers "$N_LAYERS" \
-  --drop-rate "$DROP_RATE" \
-  --batch-size "$BATCH_SIZE" \
-  --device "$DEVICE" \
-  "${QKV_BIAS_FLAG[@]}"
+CMD=(
+  "$PYTHON_BIN" run_test_eval.py
+  --test-path "$TEST_PATH"
+  --vocab-path "$VOCAB_PATH"
+  --finetuned-checkpoint "$FINETUNED_CHECKPOINT"
+  --artifact-dir "$ARTIFACT_DIR"
+  --vocab-size "$VOCAB_SIZE"
+  --context-length "$CONTEXT_LENGTH"
+  --emb-dim "$EMB_DIM"
+  --n-heads "$N_HEADS"
+  --n-layers "$N_LAYERS"
+  --drop-rate "$DROP_RATE"
+  --batch-size "$BATCH_SIZE"
+  --device "$DEVICE"
+)
+
+if [[ "$QKV_BIAS" == "true" ]]; then
+  CMD+=(--qkv-bias)
+fi
+
+"${CMD[@]}"

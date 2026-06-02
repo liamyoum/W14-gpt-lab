@@ -24,11 +24,6 @@ NUM_EPOCHS="${NUM_EPOCHS:-2}"
 SEED="${SEED:-123}"
 DEVICE="${DEVICE:-auto}"
 
-QKV_BIAS_FLAG=()
-if [[ "$QKV_BIAS" == "true" ]]; then
-  QKV_BIAS_FLAG+=(--qkv-bias)
-fi
-
 if [[ ! -f "$VOCAB_PATH" ]]; then
   echo "vocab 파일이 없습니다: $VOCAB_PATH"
   echo "먼저 bash scripts/build_vocab_light.sh 를 실행하세요."
@@ -41,22 +36,29 @@ if [[ -n "$PRETRAINED_CHECKPOINT" && ! -f "$PRETRAINED_CHECKPOINT" ]]; then
   exit 1
 fi
 
-"$PYTHON_BIN" run_finetune.py \
-  --train-path "$TRAIN_PATH" \
-  --val-path "$VAL_PATH" \
-  --vocab-path "$VOCAB_PATH" \
-  --pretrained-checkpoint "$PRETRAINED_CHECKPOINT" \
-  --artifact-dir "$ARTIFACT_DIR" \
-  --vocab-size "$VOCAB_SIZE" \
-  --context-length "$CONTEXT_LENGTH" \
-  --emb-dim "$EMB_DIM" \
-  --n-heads "$N_HEADS" \
-  --n-layers "$N_LAYERS" \
-  --drop-rate "$DROP_RATE" \
-  --batch-size "$BATCH_SIZE" \
-  --learning-rate "$LEARNING_RATE" \
-  --weight-decay "$WEIGHT_DECAY" \
-  --num-epochs "$NUM_EPOCHS" \
-  --seed "$SEED" \
-  --device "$DEVICE" \
-  "${QKV_BIAS_FLAG[@]}"
+CMD=(
+  "$PYTHON_BIN" run_finetune.py
+  --train-path "$TRAIN_PATH"
+  --val-path "$VAL_PATH"
+  --vocab-path "$VOCAB_PATH"
+  --pretrained-checkpoint "$PRETRAINED_CHECKPOINT"
+  --artifact-dir "$ARTIFACT_DIR"
+  --vocab-size "$VOCAB_SIZE"
+  --context-length "$CONTEXT_LENGTH"
+  --emb-dim "$EMB_DIM"
+  --n-heads "$N_HEADS"
+  --n-layers "$N_LAYERS"
+  --drop-rate "$DROP_RATE"
+  --batch-size "$BATCH_SIZE"
+  --learning-rate "$LEARNING_RATE"
+  --weight-decay "$WEIGHT_DECAY"
+  --num-epochs "$NUM_EPOCHS"
+  --seed "$SEED"
+  --device "$DEVICE"
+)
+
+if [[ "$QKV_BIAS" == "true" ]]; then
+  CMD+=(--qkv-bias)
+fi
+
+"${CMD[@]}"

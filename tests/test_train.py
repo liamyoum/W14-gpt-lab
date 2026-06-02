@@ -44,6 +44,15 @@ class TinyTokenizer:
         return 3
 
 
+class RecoveringTokenizer(TinyTokenizer):
+    """첫 decode는 실패하고, errors='replace'가 오면 복구하는 tokenizer."""
+
+    def decode(self, ids, errors="strict"):
+        if errors == "strict":
+            raise UnicodeDecodeError("utf-8", b"\x8c", 0, 1, "invalid start byte")
+        return "decoded with replacement"
+
+
 # =============================================================================
 # calc_loss_batch
 # =============================================================================
@@ -230,3 +239,43 @@ class TestTrainModel:
             assert sample_texts and "sample_text" in sample_texts[0]
             assert (checkpoint_dir / "best.pt").exists()
             assert (checkpoint_dir / "last.pt").exists()
+
+    def test_train_model_recovers_from_sample_decode_error(self):
+        """epoch 말미 샘플 decode가 깨져도 replacement decode로 학습 루프를 마무리해야 한다."""
+        from dataset import create_dataloader
+        from model import GPTModel
+        from train import train_model
+
+        model = GPTModel(GPT_CONFIG_SMALL)
+        train_loader = create_dataloader(
+            list(range(300)),
+            context_length=16,
+            batch_size=4,
+            shuffle=False,
+        )
+        val_loader = create_dataloader(
+            list(range(300, 500)),
+            context_length=16,
+            batch_size=4,
+            shuffle=False,
+        )
+        optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            checkpoint_dir = Path(tmp) / "checkpoints"
+            _, _, _, sample_texts = train_model(
+                model=model,
+                train_loader=train_loader,
+                val_loader=val_loader,
+                optimizer=optimizer,
+                device=torch.device("cpu"),
+                num_epochs=1,
+                eval_freq=1,
+                eval_iter=1,
+                start_context="테스트",
+                tokenizer=RecoveringTokenizer(),
+                ckpt_freq=10,
+                checkpoint_dir=checkpoint_dir,
+            )
+
+            assert sample_texts[0]["sample_text"] == "decoded with replacement"

@@ -99,6 +99,14 @@ class TestBPETokenizer:
         except NotImplementedError:
             pytest.fail("encode/decode 미구현")
 
+    def test_decode_can_replace_invalid_utf8_for_generated_samples(self):
+        """생성 중 나온 잘못된 UTF-8 byte도 errors='replace'로 안전하게 복원할 수 있어야 한다."""
+        tok = BPETokenizer(vocab_size=300)
+        tok._init_special_tokens()
+
+        text = tok.decode([BYTE_OFFSET + 0x8C], errors="replace")
+        assert text == "\ufffd"
+
     def test_get_special_ids(self):
         """get_pad_id/get_unk_id/get_bos_id/get_eos_id가 고정 ID를 반환하는지 확인한다."""
         tok = BPETokenizer(vocab_size=10)

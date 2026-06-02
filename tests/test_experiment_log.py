@@ -3,6 +3,7 @@
 
 import json
 import math
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -82,6 +83,60 @@ class TestExperimentLog:
             assert summary["last_train_loss"] == 0.59
             assert summary["best_val_acc"] == 0.70
             assert summary["fit_elapsed_seconds"] == 8.0
+
+    def test_summarize_pretrain_run_resolves_relative_path_from_repo_root(self):
+        from experiment_log import summarize_pretrain_run
+
+        with tempfile.TemporaryDirectory() as tmp:
+            original_cwd = Path.cwd()
+            artifact_dir = ROOT / "artifacts" / "relative_path_case" / "pretrain"
+            artifact_dir.mkdir(parents=True, exist_ok=True)
+            _write_jsonl(
+                artifact_dir / "metrics.jsonl",
+                [
+                    {"step": 50, "tokens_seen": 100, "train_loss": 2.3, "val_loss": 2.5},
+                    {"step": 100, "tokens_seen": 200, "train_loss": 2.1, "val_loss": 2.2},
+                ],
+            )
+            (artifact_dir / "timing.json").write_text(
+                json.dumps({"train_elapsed_seconds": 12.5}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+
+            try:
+                os.chdir(tmp)
+                summary = summarize_pretrain_run("light_rel", "artifacts/relative_path_case/pretrain")
+            finally:
+                os.chdir(original_cwd)
+                for path in [artifact_dir / "metrics.jsonl", artifact_dir / "timing.json"]:
+                    if path.exists():
+                        path.unlink()
+                if artifact_dir.exists():
+                    artifact_dir.rmdir()
+                parent = ROOT / "artifacts" / "relative_path_case"
+                if parent.exists():
+                    parent.rmdir()
+                artifacts_root = ROOT / "artifacts"
+                if artifacts_root.exists() and not any(artifacts_root.iterdir()):
+                    artifacts_root.rmdir()
+
+            assert summary["stage"] == "pretrain"
+            assert summary["val_loss"] == 2.2
+
+    def test_summarize_pretrain_run_missing_file_has_actionable_message(self):
+        from experiment_log import summarize_pretrain_run
+
+        with tempfile.TemporaryDirectory() as tmp:
+            missing_dir = Path(tmp) / "pretrain"
+
+            try:
+                summarize_pretrain_run("missing", missing_dir)
+                assert False, "Expected FileNotFoundError"
+            except FileNotFoundError as exc:
+                message = str(exc)
+                assert "pretrain metrics 파일이 없습니다" in message
+                assert "run_pretrain_light.sh" in message
+                assert "현재 기준 경로" in message
 
     def test_upsert_experiment_log_overwrites_same_run_stage(self):
         from experiment_log import load_experiment_log_rows, upsert_experiment_log

@@ -8,6 +8,8 @@ import json
 import math
 from pathlib import Path
 
+REPO_ROOT = Path(__file__).resolve().parent
+
 EXPERIMENT_LOG_COLUMNS = [
     "run",
     "stage",
@@ -51,9 +53,24 @@ def _read_json(path: str | Path) -> dict:
         return json.load(f)
 
 
-def _ensure_file(path: Path, label: str) -> None:
+def _resolve_repo_path(path: str | Path) -> Path:
+    path = Path(path)
+    if path.is_absolute():
+        return path
+    return REPO_ROOT / path
+
+
+def _ensure_file(path: Path, label: str, stage: str) -> None:
     if not path.exists():
-        raise FileNotFoundError(f"{label} 파일이 없습니다: {path}")
+        run_hint = {
+            "pretrain": "먼저 10.4 pretrain 실행 셀 또는 `bash scripts/run_pretrain_light.sh` 를 실행하세요.",
+            "finetune": "먼저 10.5 finetune 실행 셀 또는 `bash scripts/run_finetune_light.sh` 를 실행하세요.",
+        }.get(stage, "먼저 해당 stage 실행 셀을 완료하세요.")
+        raise FileNotFoundError(
+            f"{label} 파일이 없습니다: {path}\n"
+            f"현재 기준 경로: {REPO_ROOT}\n"
+            f"{run_hint}"
+        )
 
 
 def summarize_pretrain_run(
@@ -64,11 +81,11 @@ def summarize_pretrain_run(
     note: str = "",
     next_action: str = "",
 ) -> dict[str, str | float]:
-    artifact_dir = Path(artifact_dir)
+    artifact_dir = _resolve_repo_path(artifact_dir)
     metrics_path = artifact_dir / "metrics.jsonl"
     timing_path = artifact_dir / "timing.json"
-    _ensure_file(metrics_path, "pretrain metrics")
-    _ensure_file(timing_path, "pretrain timing")
+    _ensure_file(metrics_path, "pretrain metrics", "pretrain")
+    _ensure_file(timing_path, "pretrain timing", "pretrain")
 
     metrics = _read_jsonl(metrics_path)
     if not metrics:
@@ -106,11 +123,11 @@ def summarize_finetune_run(
     note: str = "",
     next_action: str = "",
 ) -> dict[str, str | float]:
-    artifact_dir = Path(artifact_dir)
+    artifact_dir = _resolve_repo_path(artifact_dir)
     metrics_path = artifact_dir / "metrics.jsonl"
     timing_path = artifact_dir / "timing.json"
-    _ensure_file(metrics_path, "finetune metrics")
-    _ensure_file(timing_path, "finetune timing")
+    _ensure_file(metrics_path, "finetune metrics", "finetune")
+    _ensure_file(timing_path, "finetune timing", "finetune")
 
     metrics = _read_jsonl(metrics_path)
     if not metrics:
@@ -141,7 +158,7 @@ def summarize_finetune_run(
 
 
 def load_experiment_log_rows(csv_path: str | Path) -> list[dict[str, str]]:
-    csv_path = Path(csv_path)
+    csv_path = _resolve_repo_path(csv_path)
     if not csv_path.exists():
         return []
     with open(csv_path, "r", encoding="utf-8", newline="") as f:
@@ -149,7 +166,7 @@ def load_experiment_log_rows(csv_path: str | Path) -> list[dict[str, str]]:
 
 
 def upsert_experiment_log(csv_path: str | Path, row: dict[str, str | float]) -> list[dict[str, str]]:
-    csv_path = Path(csv_path)
+    csv_path = _resolve_repo_path(csv_path)
     csv_path.parent.mkdir(parents=True, exist_ok=True)
 
     normalized_row = {column: row.get(column, "") for column in EXPERIMENT_LOG_COLUMNS}
