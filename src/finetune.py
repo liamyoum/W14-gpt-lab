@@ -132,8 +132,13 @@ class GPTForSequenceClassification(nn.Module):
         super().__init__()
         self.gpt = gpt_model
         self.num_labels = num_labels
-        # TODO: dropout과 classifier를 정의하세요. classifier 입력 차원은 gpt_model.config["emb_dim"]입니다.
-        raise NotImplementedError("GPTForSequenceClassification.__init__을 구현하세요.")
+        # GPT backbone은 고정하고 새로 추가한 분류층만 학습합니다.
+        self.dropout = nn.Dropout(drop_rate)
+        self.classifier = nn.Linear(gpt_model.config["emb_dim"], num_labels)
+        for param in self.gpt.parameters():
+            param.requires_grad = False
+        for param in self.classifier.parameters():
+            param.requires_grad = True
 
     def forward(
         self,
@@ -142,10 +147,22 @@ class GPTForSequenceClassification(nn.Module):
     ) -> torch.Tensor | tuple[torch.Tensor, torch.Tensor]:
         """
         TODO: GPT hidden state에서 문장 대표 벡터를 뽑아 분류 logits를 만듭니다.
-
+        
         labels가 있으면 (loss, logits), 없으면 logits를 반환합니다.
         """
-        raise NotImplementedError("GPTForSequenceClassification.forward를 구현하세요.")
+        # LM head 대신 backbone hidden state를 바로 분류에 사용합니다.
+        x = self.gpt.tok_emb(input_ids)
+        x = x + self.gpt.pos_emb(torch.arange(input_ids.size(1), device=input_ids.device))
+        x = self.gpt.drop_emb(x)
+        x = self.gpt.trf_blocks(x)
+        x = self.gpt.final_norm(x)
+        logits = self.classifier(self.dropout(x[:, -1, :]))
+
+        if labels is None:
+            return logits
+
+        loss = torch.nn.functional.cross_entropy(logits, labels)
+        return loss, logits
 
 
 def train_epoch_sentiment(
@@ -155,7 +172,30 @@ def train_epoch_sentiment(
     device: torch.device,
 ) -> tuple[float, float]:
     """TODO: 감성 분류 모델을 1 epoch 훈련하고 (평균 loss, accuracy)를 반환합니다."""
-    raise NotImplementedError("train_epoch_sentiment를 구현하세요.")
+    model.train()
+    total_loss = 0.0
+    total_correct = 0
+    total_count = 0
+
+    for input_ids, labels in train_loader:
+        # 배치 데이터를 현재 device로 옮깁니다.
+        input_ids = input_ids.to(device)
+        labels = labels.to(device)
+
+        # 분류 loss를 계산하고 classifier 파라미터를 업데이트합니다.
+        optimizer.zero_grad()
+        loss, logits = model(input_ids, labels=labels)
+        loss.backward()
+        optimizer.step()
+
+        # epoch 평균을 위해 loss와 accuracy 통계를 누적합니다.
+        total_loss += loss.item()
+        total_correct += (logits.argmax(dim=1) == labels).sum().item()
+        total_count += labels.size(0)
+    # epoch 마다 loss, accur 집계
+    avg_loss = total_loss / len(train_loader)
+    accuracy = total_correct / total_count
+    return avg_loss, accuracy
 
 
 def evaluate_sentiment(
@@ -164,4 +204,22 @@ def evaluate_sentiment(
     device: torch.device,
 ) -> tuple[float, float]:
     """TODO: 감성 분류 모델을 평가하고 (평균 loss, accuracy)를 반환합니다."""
-    raise NotImplementedError("evaluate_sentiment를 구현하세요.")
+    model.eval()
+    total_loss = 0.0
+    total_correct = 0
+    total_count = 0
+
+    # 평가는 gradient 없이 같은 지표만 계산합니다.
+    with torch.no_grad():
+        for input_ids, labels in data_loader:
+            input_ids = input_ids.to(device)
+            labels = labels.to(device)
+
+            loss, logits = model(input_ids, labels=labels)
+            total_loss += loss.item()
+            total_correct += (logits.argmax(dim=1) == labels).sum().item()
+            total_count += labels.size(0)
+
+    avg_loss = total_loss / len(data_loader)
+    accuracy = total_correct / total_count
+    return avg_loss, accuracy
