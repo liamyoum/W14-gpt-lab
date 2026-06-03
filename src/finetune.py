@@ -257,10 +257,10 @@ def evaluate_sentiment(
             total_loss += loss.item() * batch_size
 
             predictions = torch.argmax(logits, dim = 1)
-            total_correct = (predictions == labels).sum().item()
-            total_samples = labels.size(0)
+            total_correct += (predictions == labels).sum().item()
+            total_samples += labels.size(0)
 
-    avg_loss == total_loss / total_samples
+    avg_loss = total_loss / total_samples
     accuracy = total_correct / total_samples
 
     return avg_loss, accuracy
