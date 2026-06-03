@@ -34,6 +34,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--drop-rate", type=float, default=0.0)
     parser.add_argument("--qkv-bias", action="store_true", help="Enable QKV bias.")
     parser.add_argument("--batch-size", type=int, default=16)
+    parser.add_argument("--num-workers", type=int, default=2, help="DataLoader worker processes.")
     parser.add_argument("--device", type=str, default="auto", help="auto, cpu, cuda, mps")
     return parser.parse_args()
 
@@ -46,6 +47,17 @@ def pick_device(name: str) -> torch.device:
     if torch.backends.mps.is_available():
         return torch.device("mps")
     return torch.device("cpu")
+
+
+def make_dataloader(dataset, batch_size: int, shuffle: bool, num_workers: int, device: torch.device) -> DataLoader:
+    return DataLoader(
+        dataset,
+        batch_size=batch_size,
+        shuffle=shuffle,
+        num_workers=num_workers,
+        persistent_workers=num_workers > 0,
+        pin_memory=device.type == "cuda",
+    )
 
 
 def read_jsonl(path: Path) -> list[dict]:
@@ -81,13 +93,14 @@ def main() -> None:
         )
 
     device = pick_device(args.device)
+    print(f"device: {device}")
 
     tokenizer = BPETokenizer(vocab_size=args.vocab_size)
     tokenizer.load(args.vocab_path)
 
     test_rows = read_jsonl(args.test_path)
     test_ds = ReviewSentimentDataset(test_rows, tokenizer, max_length=args.context_length)
-    test_loader = DataLoader(test_ds, batch_size=args.batch_size, shuffle=False)
+    test_loader = make_dataloader(test_ds, args.batch_size, False, args.num_workers, device)
 
     config = {
         "vocab_size": args.vocab_size,
@@ -116,6 +129,8 @@ def main() -> None:
         {
             "test_elapsed_seconds": test_elapsed_seconds,
             "num_test_examples": len(test_rows),
+            "num_workers": args.num_workers,
+            "device": str(device),
             "samples_per_second": len(test_rows) / test_elapsed_seconds if test_elapsed_seconds > 0 else 0.0,
             "milliseconds_per_sample": (test_elapsed_seconds / len(test_rows) * 1000) if test_rows else 0.0,
         },

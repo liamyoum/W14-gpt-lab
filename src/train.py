@@ -74,6 +74,27 @@ def save_checkpoint(
     torch.save(check_point, path)
 
 
+def _normalize_checkpoint_state_dict(state_dict: dict[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+    """다른 구현에서 저장한 GPT 체크포인트 키를 현재 모델 이름으로 맞춥니다."""
+    if "tok_emb.weight" in state_dict:
+        return state_dict
+
+    direct_key_map = {
+        "embedding.token_embedding_layer.weight": "tok_emb.weight",
+        "embedding.pos_embedding_layer.weight": "pos_emb.weight",
+        "final_layernorm.gamma": "final_norm.gamma",
+        "final_layernorm.beta": "final_norm.beta",
+        "lm_head.weight": "out_head.weight",
+    }
+    normalized_state_dict: dict[str, torch.Tensor] = {}
+    for key, value in state_dict.items():
+        new_key = direct_key_map.get(key, key)
+        if ".ffn." in new_key:
+            new_key = new_key.replace(".ffn.", ".ff.")
+        normalized_state_dict[new_key] = value
+    return normalized_state_dict
+
+
 def load_checkpoint(
     model: GPTModel,
     optimizer: torch.optim.Optimizer | None,
@@ -82,7 +103,15 @@ def load_checkpoint(
 ) -> tuple[int, int]:
     """torch.load로 checkpoint를 읽어 model/optimizer 상태를 복원합니다."""
     check_point = torch.load(path, map_location = device)
-    model.load_state_dict(check_point["model_state_dict"])
+    state_dict = _normalize_checkpoint_state_dict(check_point["model_state_dict"])
+    missing_keys, unexpected_keys = model.load_state_dict(state_dict, strict=False)
+
+    missing_keys = [key for key in missing_keys if not key.endswith(".att.mask")]
+    if missing_keys or unexpected_keys:
+        raise RuntimeError(
+            "checkpoint와 현재 모델 구조가 맞지 않습니다. "
+            f"missing_keys={missing_keys}, unexpected_keys={unexpected_keys}"
+        )
     
     if optimizer is not None:
         optimizer.load_state_dict(check_point["optimizer_state_dict"])

@@ -94,26 +94,29 @@ class ReviewSentimentDataset(Dataset):
         max_length: int = 128,
         pad_id: int | None = None,
     ):
-        self.data = data
-        self.tokenizer = tokenizer
-        self.max_length = max_length
         self.pad_id = tokenizer.get_pad_id() if pad_id is None else pad_id
+        self.max_length = max_length
+        self.input_ids = torch.empty((len(data), max_length), dtype=torch.long)
+        self.labels = torch.empty(len(data), dtype=torch.long)
+
+        for idx, sample in enumerate(data):
+            self.input_ids[idx] = self._encode_and_pad(tokenizer, sample["text"])
+            self.labels[idx] = int(sample["label"])
 
     def __len__(self) -> int:
-        return len(self.data)
+        return len(self.labels)
 
-    def __getitem__(self, idx: int) -> tuple[torch.Tensor, int]:
-        """TODO: text를 encode하고 max_length까지 자르거나 padding한 뒤 label과 함께 반환합니다."""
-        # 현재 샘플 하나만 꺼내서 text와 label을 읽는다.
-        sample = self.data[idx]
-        encoded = self.tokenizer.encode(sample["text"], add_bos_eos=True)
-
-        # max_length를 기준으로 너무 긴 시퀀스는 자르고, 부족한 길이는 pad_id로 오른쪽을 채운다.
+    def _encode_and_pad(self, tokenizer, text: str) -> torch.Tensor:
+        """리뷰 하나를 토큰화하고 max_length 길이의 고정 크기 tensor로 변환합니다."""
+        encoded = tokenizer.encode(text, add_bos_eos=True)
         encoded = encoded[: self.max_length]
         if len(encoded) < self.max_length:
             encoded = encoded + [self.pad_id] * (self.max_length - len(encoded))
+        return torch.tensor(encoded, dtype=torch.long)
 
-        return torch.tensor(encoded, dtype=torch.long), sample["label"]
+    def __getitem__(self, idx: int) -> tuple[torch.Tensor, int]:
+        """미리 캐시한 token tensor와 label을 반환합니다."""
+        return self.input_ids[idx], int(self.labels[idx].item())
 
 
 class GPTForSequenceClassification(nn.Module):
@@ -182,24 +185,38 @@ def train_epoch_sentiment(
     total_count = 0
 
     for input_ids, labels in train_loader:
-        # 배치 데이터를 현재 device로 옮깁니다.
-        input_ids = input_ids.to(device)
-        labels = labels.to(device)
-
-        # 분류 loss를 계산하고 classifier 파라미터를 업데이트합니다.
-        optimizer.zero_grad()
-        loss, logits = model(input_ids, labels=labels)
-        loss.backward()
-        optimizer.step()
+        loss_value, batch_correct, batch_count = train_step_sentiment(model, input_ids, labels, optimizer, device)
 
         # epoch 평균을 위해 loss와 accuracy 통계를 누적합니다.
-        total_loss += loss.item()
-        total_correct += (logits.argmax(dim=1) == labels).sum().item()
-        total_count += labels.size(0)
+        total_loss += loss_value
+        total_correct += batch_correct
+        total_count += batch_count
     # epoch 마다 loss, accur 집계
     avg_loss = total_loss / len(train_loader)
     accuracy = total_correct / total_count
     return avg_loss, accuracy
+
+
+def train_step_sentiment(
+    model: GPTForSequenceClassification,
+    input_ids: torch.Tensor,
+    labels: torch.Tensor,
+    optimizer: torch.optim.Optimizer,
+    device: torch.device,
+) -> tuple[float, int, int]:
+    """감성 분류 모델을 한 step 학습하고 (loss, correct, count)를 반환합니다."""
+    model.train()
+    input_ids = input_ids.to(device)
+    labels = labels.to(device)
+
+    optimizer.zero_grad()
+    loss, logits = model(input_ids, labels=labels)
+    loss.backward()
+    optimizer.step()
+
+    batch_correct = (logits.argmax(dim=1) == labels).sum().item()
+    batch_count = labels.size(0)
+    return loss.item(), batch_correct, batch_count
 
 
 def evaluate_sentiment(

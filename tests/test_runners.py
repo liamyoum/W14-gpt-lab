@@ -161,7 +161,7 @@ class TestRunnerWiring:
     def test_run_finetune_uses_cli_hyperparameters(self):
         import run_finetune
 
-        captured = {"train_epoch_calls": 0}
+        captured = {"train_step_calls": 0}
 
         class DummyTokenizer:
             def __init__(self, vocab_size):
@@ -193,13 +193,13 @@ class TestRunnerWiring:
             captured.setdefault("dataset_max_lengths", []).append(max_length)
             return rows
 
-        def fake_dataloader(dataset, batch_size, shuffle):
-            captured.setdefault("loaders", []).append({"batch_size": batch_size, "shuffle": shuffle})
-            return [dataset]
+        def fake_dataloader(dataset, **kwargs):
+            captured.setdefault("loaders", []).append(kwargs)
+            return [([1, 2, 3], [1])]
 
-        def fake_train_epoch(model, loader, optimizer, device):
-            captured["train_epoch_calls"] += 1
-            return 0.4, 0.8
+        def fake_train_step(model, input_ids, labels, optimizer, device):
+            captured["train_step_calls"] += 1
+            return 0.4, 1, 1
 
         def fake_evaluate(model, loader, device):
             captured["evaluate_calls"] = captured.get("evaluate_calls", 0) + 1
@@ -233,6 +233,8 @@ class TestRunnerWiring:
                 learning_rate=2e-5,
                 weight_decay=0.15,
                 num_epochs=4,
+                eval_freq=2,
+                num_workers=2,
                 seed=7,
                 device="cpu",
             ),
@@ -251,7 +253,7 @@ class TestRunnerWiring:
         ), mock.patch.object(
             run_finetune.torch.optim, "AdamW", return_value=object()
         ), mock.patch.object(
-            run_finetune, "train_epoch_sentiment", side_effect=fake_train_epoch
+            run_finetune, "train_step_sentiment", side_effect=fake_train_step
         ), mock.patch.object(
             run_finetune, "evaluate_sentiment", side_effect=fake_evaluate
         ), mock.patch.object(
@@ -274,9 +276,12 @@ class TestRunnerWiring:
         assert captured["model_config"]["qkv_bias"] is True
         assert captured["dataset_max_lengths"] == [55, 55]
         assert captured["loaders"][0]["batch_size"] == 11
+        assert captured["loaders"][0]["num_workers"] == 2
+        assert captured["loaders"][0]["persistent_workers"] is True
+        assert captured["loaders"][0]["pin_memory"] is False
         assert captured["classifier"]["drop_rate"] == 0.35
-        assert captured["train_epoch_calls"] == 4
-        assert captured["evaluate_calls"] == 4
+        assert captured["train_step_calls"] == 4
+        assert captured["evaluate_calls"] == 2
         assert timing_writer.called
 
         vocab_path.unlink(missing_ok=True)
@@ -316,8 +321,8 @@ class TestRunnerWiring:
             captured["dataset_max_length"] = max_length
             return rows
 
-        def fake_dataloader(dataset, batch_size, shuffle):
-            captured["loader"] = {"batch_size": batch_size, "shuffle": shuffle}
+        def fake_dataloader(dataset, **kwargs):
+            captured["loader"] = kwargs
             return [dataset]
 
         def fake_evaluate(model, loader, device):
@@ -350,6 +355,7 @@ class TestRunnerWiring:
                 drop_rate=0.2,
                 qkv_bias=True,
                 batch_size=13,
+                num_workers=2,
                 device="cpu",
             ),
         ), mock.patch.object(run_test_eval, "BPETokenizer", DummyTokenizer), mock.patch.object(
@@ -380,6 +386,9 @@ class TestRunnerWiring:
         assert captured["dataset_max_length"] == 48
         assert captured["loader"]["batch_size"] == 13
         assert captured["loader"]["shuffle"] is False
+        assert captured["loader"]["num_workers"] == 2
+        assert captured["loader"]["persistent_workers"] is True
+        assert captured["loader"]["pin_memory"] is False
         assert captured["classifier"]["drop_rate"] == 0.2
         assert captured["evaluate_called"] is True
         assert (artifact_dir / "test_metrics.json").exists()

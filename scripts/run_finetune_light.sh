@@ -21,6 +21,8 @@ BATCH_SIZE="${BATCH_SIZE:-16}"
 LEARNING_RATE="${LEARNING_RATE:-5e-5}"
 WEIGHT_DECAY="${WEIGHT_DECAY:-0.0}"
 NUM_EPOCHS="${NUM_EPOCHS:-2}"
+EVAL_FREQ="${EVAL_FREQ:-1500}"
+NUM_WORKERS="${NUM_WORKERS:-2}"
 SEED="${SEED:-123}"
 DEVICE="${DEVICE:-auto}"
 
@@ -53,6 +55,8 @@ CMD=(
   --learning-rate "$LEARNING_RATE"
   --weight-decay "$WEIGHT_DECAY"
   --num-epochs "$NUM_EPOCHS"
+  --eval-freq "$EVAL_FREQ"
+  --num-workers "$NUM_WORKERS"
   --seed "$SEED"
   --device "$DEVICE"
 )

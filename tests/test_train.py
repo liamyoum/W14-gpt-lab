@@ -142,6 +142,50 @@ class TestCheckpoint:
         assert epoch == 1
         assert step == 10
 
+    def test_load_checkpoint_accepts_legacy_state_dict_keys(self):
+        """이전 구현에서 저장된 키 이름도 현재 GPTModel로 변환해 로드하는지 확인한다."""
+        from model import GPTModel
+        from train import load_checkpoint
+
+        model = GPTModel(GPT_CONFIG_SMALL)
+        legacy_state_dict = {}
+        for key, value in model.state_dict().items():
+            if key.endswith(".att.mask"):
+                continue
+            legacy_key = key
+            legacy_key = legacy_key.replace("tok_emb.weight", "embedding.token_embedding_layer.weight")
+            legacy_key = legacy_key.replace("pos_emb.weight", "embedding.pos_embedding_layer.weight")
+            legacy_key = legacy_key.replace("final_norm.gamma", "final_layernorm.gamma")
+            legacy_key = legacy_key.replace("final_norm.beta", "final_layernorm.beta")
+            legacy_key = legacy_key.replace("out_head.weight", "lm_head.weight")
+            legacy_key = legacy_key.replace(".ff.", ".ffn.")
+            legacy_state_dict[legacy_key] = value.detach().clone()
+
+        optimizer = torch.optim.AdamW(model.parameters(), lr=1e-4)
+        checkpoint = {
+            "model_state_dict": legacy_state_dict,
+            "optimizer_state_dict": optimizer.state_dict(),
+            "epoch": 30,
+            "global_step": 12750,
+        }
+
+        with tempfile.NamedTemporaryFile(suffix=".pt", delete=False) as f:
+            path = f.name
+
+        torch.save(checkpoint, path)
+
+        try:
+            restored_model = GPTModel(GPT_CONFIG_SMALL)
+            restored_optimizer = torch.optim.AdamW(restored_model.parameters(), lr=1e-4)
+            epoch, step = load_checkpoint(restored_model, restored_optimizer, path, torch.device("cpu"))
+        finally:
+            Path(path).unlink(missing_ok=True)
+
+        assert epoch == 30
+        assert step == 12750
+        for key, tensor in model.state_dict().items():
+            assert torch.equal(tensor, restored_model.state_dict()[key])
+
 
 # =============================================================================
 # generate (temperature, top_k)

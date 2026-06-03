@@ -17,6 +17,7 @@ N_LAYERS="${N_LAYERS:-1}"
 DROP_RATE="${DROP_RATE:-0.0}"
 QKV_BIAS="${QKV_BIAS:-false}"
 BATCH_SIZE="${BATCH_SIZE:-16}"
+NUM_WORKERS="${NUM_WORKERS:-2}"
 DEVICE="${DEVICE:-auto}"
 
 if [[ ! -f "$VOCAB_PATH" ]]; then
@@ -44,6 +45,7 @@ CMD=(
   --n-layers "$N_LAYERS"
   --drop-rate "$DROP_RATE"
   --batch-size "$BATCH_SIZE"
+  --num-workers "$NUM_WORKERS"
   --device "$DEVICE"
 )
 

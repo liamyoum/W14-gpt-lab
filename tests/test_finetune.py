@@ -93,6 +93,31 @@ class TestReviewSentimentDataset:
         assert input_ids.dtype == torch.long
         assert label == 1
 
+    def test_review_sentiment_dataset_caches_tokenized_examples(self):
+        """Dataset 생성 시 한 번만 토큰화하고 __getitem__에서는 캐시를 재사용하는지 확인한다."""
+        from finetune import ReviewSentimentDataset
+
+        class CountingTokenizer(DummyTokenizer):
+            def __init__(self):
+                self.encode_calls = 0
+
+            def encode(self, text, add_bos_eos=False):
+                self.encode_calls += 1
+                return super().encode(text, add_bos_eos=add_bos_eos)
+
+        tokenizer = CountingTokenizer()
+        data = [
+            {"text": "재미있다", "label": 1},
+            {"text": "별로였다", "label": 0},
+        ]
+        ds = ReviewSentimentDataset(data, tokenizer, max_length=8)
+
+        assert tokenizer.encode_calls == 2
+        _ = ds[0]
+        _ = ds[1]
+        _ = ds[0]
+        assert tokenizer.encode_calls == 2
+
 
 class TestGPTForSequenceClassification:
     """GPTForSequenceClassification 구현 후 실행."""
@@ -116,8 +141,9 @@ class TestSentimentTrainEval:
     """훈련/평가 함수가 호출 가능한지 확인."""
 
     def test_train_eval_functions_exist(self):
-        """train_epoch_sentiment/evaluate_sentiment 함수가 import 가능하고 callable인지 확인한다."""
-        from finetune import train_epoch_sentiment, evaluate_sentiment
+        """train_step_sentiment/train_epoch_sentiment/evaluate_sentiment 함수가 import 가능하고 callable인지 확인한다."""
+        from finetune import train_step_sentiment, train_epoch_sentiment, evaluate_sentiment
 
+        assert callable(train_step_sentiment)
         assert callable(train_epoch_sentiment)
         assert callable(evaluate_sentiment)
