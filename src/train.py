@@ -2,6 +2,7 @@
 """GPT 사전 학습 유틸리티 과제 템플릿."""
 
 import matplotlib.pyplot as plt
+import math
 import torch
 from pathlib import Path
 
@@ -173,6 +174,10 @@ def train_model(
     ckpt_freq: int | None = None,
     start_epoch: int = 0,
     global_step: int = 0,
+    use_lr_schedule: bool = False,
+    warmup_steps: int = 0,
+    min_lr: float = 0.0,
+    grad_clip: float | None = None,
 ) -> tuple[list[float], list[float]]:
     """TODO: 사전 학습 루프를 구현하고 epoch별 train loss 리스트를 반환합니다."""
     # 손실과 지금까지 처리한 토큰 수를 추적하기 위해 리스트 초기화
@@ -181,18 +186,53 @@ def train_model(
     track_tokens_seen = []
     tokens_seen = 0
 
+    peak_lr = optimizer.param_groups[0]["lr"] # 옵티마이저의 현재 lr을 scheduler의 최대 학습률로 사용
+    remaining_epochs = max(0, num_epochs - start_epoch)
+    total_training_steps = len(train_loader) * remaining_epochs # 현재 train_model 호출에서 앞으로 돌 update 수
+    local_step = 0
+
+    def get_lr(step: int) -> float:
+        """warmup 후 cosine decay로 현재 step의 learning rate를 계산합니다."""
+        if not use_lr_schedule:
+            return peak_lr
+
+        if total_training_steps == 0:
+            return min_lr
+
+        if warmup_steps > 0 and step < warmup_steps:
+            return peak_lr * (step + 1) / warmup_steps
+
+        decay_steps = max(1, total_training_steps - warmup_steps)
+        decay_step = min(max(0, step - warmup_steps), decay_steps)
+        progress = decay_step / decay_steps
+        cosine = 0.5 * (1.0 + math.cos(math.pi * progress))
+        return min_lr + (peak_lr - min_lr) * cosine
+
+    def set_lr(lr: float) -> None:
+        """optimizer의 모든 parameter group에 같은 learning rate를 적용합니다."""
+        for param_group in optimizer.param_groups:
+            param_group["lr"] = lr
+
     # Main Training Loop
     for epoch in range(start_epoch, num_epochs):
         model.train()
 
         for input_batch, target_batch in train_loader:
+            current_lr = get_lr(local_step)
+            set_lr(current_lr)
+
             optimizer.zero_grad() # 이전 배치 반복에서 얻은 손실 gradient 초기화
             loss = calc_loss_batch(input_batch, target_batch, model, device)
             loss.backward() # 손실 gradient 계산
+
+            if grad_clip is not None:
+                torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+
             optimizer.step() # 손실 gradient 사용해 모델 weights update
 
             tokens_seen += input_batch.numel() # input_batch 내부 전체 원소 개수 반환
             global_step += 1
+            local_step += 1
 
             # 추가적인 평가 단계
             if global_step % eval_freq == 0:
@@ -203,7 +243,8 @@ def train_model(
                 track_tokens_seen.append(tokens_seen)
                 print(f"에포크 {epoch+1} (Step {global_step:06d}): "
                       f"훈련 손실 {train_loss:.3f}, "
-                      f"검증 손실 {val_loss:.3f}"
+                      f"검증 손실 {val_loss:.3f}, "
+                      f"lr {current_lr:.6g}"
 				)
         
         generate_and_print_sample(model, tokenizer, device, start_context)
