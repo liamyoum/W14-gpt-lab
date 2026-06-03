@@ -136,6 +136,35 @@ class TestGPTForSequenceClassification:
             pytest.fail("GPTForSequenceClassification 미구현")
         assert logits.shape == (2, 2)
 
+    def test_classifier_only_is_default(self):
+        """기본값은 backbone을 전부 freeze하고 classifier만 학습하는지 확인한다."""
+        from model import GPTModel
+        from finetune import GPTForSequenceClassification
+
+        backbone = GPTModel(GPT_CONFIG_TINY)
+        model = GPTForSequenceClassification(backbone, num_labels=2)
+
+        backbone_trainable = sum(param.numel() for param in model.gpt.parameters() if param.requires_grad)
+        classifier_trainable = sum(param.numel() for param in model.classifier.parameters() if param.requires_grad)
+
+        assert backbone_trainable == 0
+        assert classifier_trainable > 0
+
+    def test_unfreeze_backbone_trains_last_block_and_final_norm(self):
+        """unfreeze를 켜면 마지막 block과 final norm만 추가로 학습하는지 확인한다."""
+        from model import GPTModel
+        from finetune import GPTForSequenceClassification
+
+        config = GPT_CONFIG_TINY | {"n_layers": 2}
+        backbone = GPTModel(config)
+        model = GPTForSequenceClassification(backbone, num_labels=2, unfreeze_backbone=True)
+
+        assert any(param.requires_grad for param in model.gpt.trf_blocks[-1].parameters())
+        assert any(param.requires_grad for param in model.gpt.final_norm.parameters())
+        assert not any(param.requires_grad for param in model.gpt.tok_emb.parameters())
+        assert not any(param.requires_grad for param in model.gpt.pos_emb.parameters())
+        assert not any(param.requires_grad for param in model.gpt.trf_blocks[0].parameters())
+
 
 class TestSentimentTrainEval:
     """훈련/평가 함수가 호출 가능한지 확인."""

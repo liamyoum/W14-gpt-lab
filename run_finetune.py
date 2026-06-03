@@ -55,6 +55,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--num-epochs", type=int, default=2)
     parser.add_argument("--eval-freq", type=int, default=1500, help="Evaluate and log every N train steps.")
     parser.add_argument("--num-workers", type=int, default=2, help="DataLoader worker processes.")
+    parser.add_argument("--unfreeze-backbone", action="store_true", help="Train the last GPT block and final norm with the classifier.")
+    parser.add_argument("--backbone-lr-ratio", type=float, default=0.1, help="Backbone LR relative to classifier LR when unfreezing.")
     parser.add_argument("--seed", type=int, default=123)
     parser.add_argument("--device", type=str, default="auto", help="auto, cpu, cuda, mps")
     return parser.parse_args()
@@ -79,6 +81,57 @@ def make_dataloader(dataset, batch_size: int, shuffle: bool, num_workers: int, d
         persistent_workers=num_workers > 0,
         pin_memory=device.type == "cuda",
     )
+
+
+def summarize_trainable_params(model: GPTForSequenceClassification) -> tuple[int, int]:
+    backbone_params = 0
+    classifier_params = 0
+    for name, param in model.named_parameters():
+        if not param.requires_grad:
+            continue
+        if name.startswith("classifier."):
+            classifier_params += param.numel()
+        else:
+            backbone_params += param.numel()
+    return backbone_params, classifier_params
+
+
+def create_optimizer(
+    model: GPTForSequenceClassification,
+    classifier_lr: float,
+    backbone_lr_ratio: float,
+    weight_decay: float,
+) -> torch.optim.Optimizer:
+    classifier_params = []
+    backbone_params = []
+    for name, param in model.named_parameters():
+        if not param.requires_grad:
+            continue
+        if name.startswith("classifier."):
+            classifier_params.append(param)
+        else:
+            backbone_params.append(param)
+
+    if not classifier_params:
+        raise RuntimeError("trainable classifier parameter가 없습니다.")
+
+    param_groups = [
+        {
+            "params": classifier_params,
+            "lr": classifier_lr,
+            "weight_decay": weight_decay,
+        }
+    ]
+    if backbone_params:
+        param_groups.append(
+            {
+                "params": backbone_params,
+                "lr": classifier_lr * backbone_lr_ratio,
+                "weight_decay": weight_decay,
+            }
+        )
+
+    return torch.optim.AdamW(param_groups)
 
 
 def read_jsonl(path: Path) -> list[dict]:
@@ -217,9 +270,21 @@ def main() -> None:
     if pretrained_checkpoint:
         load_checkpoint(backbone, None, pretrained_checkpoint, device)
 
-    model = GPTForSequenceClassification(backbone, num_labels=2, drop_rate=args.drop_rate).to(device)
-    trainable_params = [param for param in model.parameters() if param.requires_grad]
-    optimizer = torch.optim.AdamW(trainable_params, lr=args.learning_rate, weight_decay=args.weight_decay)
+    model = GPTForSequenceClassification(
+        backbone,
+        num_labels=2,
+        drop_rate=args.drop_rate,
+        unfreeze_backbone=args.unfreeze_backbone,
+    ).to(device)
+    optimizer = create_optimizer(model, args.learning_rate, args.backbone_lr_ratio, args.weight_decay)
+    trainable_backbone_params, trainable_classifier_params = summarize_trainable_params(model)
+    print(f"unfreeze_backbone: {args.unfreeze_backbone}")
+    print(f"classifier_lr: {args.learning_rate}")
+    print(f"backbone_lr_ratio: {args.backbone_lr_ratio}")
+    if trainable_backbone_params > 0:
+        print(f"backbone_lr: {args.learning_rate * args.backbone_lr_ratio}")
+    print(f"trainable_backbone_params: {trainable_backbone_params}")
+    print(f"trainable_classifier_params: {trainable_classifier_params}")
 
     artifact_dir = args.artifact_dir
     checkpoint_dir = artifact_dir / "checkpoints"
@@ -345,6 +410,12 @@ def main() -> None:
             "num_workers": args.num_workers,
             "device": str(device),
             "num_eval_points": len(eval_steps),
+            "unfreeze_backbone": args.unfreeze_backbone,
+            "backbone_lr_ratio": args.backbone_lr_ratio,
+            "classifier_lr": args.learning_rate,
+            "backbone_lr": args.learning_rate * args.backbone_lr_ratio if trainable_backbone_params > 0 else 0.0,
+            "trainable_backbone_params": trainable_backbone_params,
+            "trainable_classifier_params": trainable_classifier_params,
             "train_examples_per_second": total_train_examples / sum(train_seconds) if sum(train_seconds) > 0 else 0.0,
         },
     )

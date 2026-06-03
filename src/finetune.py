@@ -131,17 +131,30 @@ class GPTForSequenceClassification(nn.Module):
         gpt_model: GPTModel,
         num_labels: int = 2,
         drop_rate: float = 0.1,
+        unfreeze_backbone: bool = False,
     ):
         super().__init__()
         self.gpt = gpt_model
         self.num_labels = num_labels
+        self.unfreeze_backbone = unfreeze_backbone
         # GPT backbone은 고정하고 새로 추가한 분류층만 학습합니다.
         self.dropout = nn.Dropout(drop_rate)
         self.classifier = nn.Linear(gpt_model.config["emb_dim"], num_labels)
-        for param in self.gpt.parameters():
-            param.requires_grad = False
-        for param in self.classifier.parameters():
-            param.requires_grad = True
+        self._configure_trainable_parameters()
+
+    @staticmethod
+    def _set_requires_grad(module: nn.Module, requires_grad: bool) -> None:
+        for param in module.parameters():
+            param.requires_grad = requires_grad
+
+    def _configure_trainable_parameters(self) -> None:
+        """기본은 classifier-only, unfreeze 시 마지막 block + final norm만 학습합니다."""
+        self._set_requires_grad(self.gpt, False)
+        if self.unfreeze_backbone:
+            last_block = self.gpt.trf_blocks[-1]
+            self._set_requires_grad(last_block, True)
+            self._set_requires_grad(self.gpt.final_norm, True)
+        self._set_requires_grad(self.classifier, True)
 
     def forward(
         self,

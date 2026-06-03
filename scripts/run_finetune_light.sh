@@ -23,6 +23,8 @@ WEIGHT_DECAY="${WEIGHT_DECAY:-0.0}"
 NUM_EPOCHS="${NUM_EPOCHS:-2}"
 EVAL_FREQ="${EVAL_FREQ:-1500}"
 NUM_WORKERS="${NUM_WORKERS:-2}"
+UNFREEZE_BACKBONE="${UNFREEZE_BACKBONE:-false}"
+BACKBONE_LR_RATIO="${BACKBONE_LR_RATIO:-0.1}"
 SEED="${SEED:-123}"
 DEVICE="${DEVICE:-auto}"
 
@@ -57,12 +59,17 @@ CMD=(
   --num-epochs "$NUM_EPOCHS"
   --eval-freq "$EVAL_FREQ"
   --num-workers "$NUM_WORKERS"
+  --backbone-lr-ratio "$BACKBONE_LR_RATIO"
   --seed "$SEED"
   --device "$DEVICE"
 )
 
 if [[ "$QKV_BIAS" == "true" ]]; then
   CMD+=(--qkv-bias)
+fi
+
+if [[ "$UNFREEZE_BACKBONE" == "true" ]]; then
+  CMD+=(--unfreeze-backbone)
 fi
 
 "${CMD[@]}"

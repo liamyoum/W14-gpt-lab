@@ -175,19 +175,19 @@ class TestRunnerWiring:
                 captured["model_config"] = config
 
         class DummyClassifier:
-            def __init__(self, backbone, num_labels, drop_rate):
+            def __init__(self, backbone, num_labels, drop_rate, unfreeze_backbone=False):
                 captured["classifier"] = {
                     "num_labels": num_labels,
                     "drop_rate": drop_rate,
+                    "unfreeze_backbone": unfreeze_backbone,
                 }
-                self._params = []
 
             def to(self, device):
                 captured["device"] = str(device)
                 return self
 
-            def parameters(self):
-                return self._params
+            def named_parameters(self):
+                return []
 
         def fake_dataset(rows, tokenizer, max_length):
             captured.setdefault("dataset_max_lengths", []).append(max_length)
@@ -204,6 +204,17 @@ class TestRunnerWiring:
         def fake_evaluate(model, loader, device):
             captured["evaluate_calls"] = captured.get("evaluate_calls", 0) + 1
             return 0.5, 0.7
+
+        def fake_create_optimizer(model, classifier_lr, backbone_lr_ratio, weight_decay):
+            captured["optimizer_config"] = {
+                "classifier_lr": classifier_lr,
+                "backbone_lr_ratio": backbone_lr_ratio,
+                "weight_decay": weight_decay,
+            }
+            return object()
+
+        def fake_summarize_trainable_params(model):
+            return 128, 64
 
         def fake_read_jsonl(path):
             return [{"text": "sample", "label": 1}]
@@ -235,6 +246,8 @@ class TestRunnerWiring:
                 num_epochs=4,
                 eval_freq=2,
                 num_workers=2,
+                unfreeze_backbone=True,
+                backbone_lr_ratio=0.1,
                 seed=7,
                 device="cpu",
             ),
@@ -251,7 +264,9 @@ class TestRunnerWiring:
         ), mock.patch.object(
             run_finetune, "GPTForSequenceClassification", DummyClassifier
         ), mock.patch.object(
-            run_finetune.torch.optim, "AdamW", return_value=object()
+            run_finetune, "create_optimizer", side_effect=fake_create_optimizer
+        ), mock.patch.object(
+            run_finetune, "summarize_trainable_params", side_effect=fake_summarize_trainable_params
         ), mock.patch.object(
             run_finetune, "train_step_sentiment", side_effect=fake_train_step
         ), mock.patch.object(
@@ -280,6 +295,10 @@ class TestRunnerWiring:
         assert captured["loaders"][0]["persistent_workers"] is True
         assert captured["loaders"][0]["pin_memory"] is False
         assert captured["classifier"]["drop_rate"] == 0.35
+        assert captured["classifier"]["unfreeze_backbone"] is True
+        assert captured["optimizer_config"]["classifier_lr"] == 2e-5
+        assert captured["optimizer_config"]["backbone_lr_ratio"] == 0.1
+        assert captured["optimizer_config"]["weight_decay"] == 0.15
         assert captured["train_step_calls"] == 4
         assert captured["evaluate_calls"] == 2
         assert timing_writer.called
