@@ -37,6 +37,15 @@ htmlcov/
 checkpoints/
 artifacts/
 
+# Colab 실험용으로 공유하는 최소 파일만 예외 추적
+!artifacts/
+artifacts/*
+!artifacts/ckpt_epoch_30.pt
+!data/nsmc_bpe_vocab_3000.json
+!data/nsmc_sentiment_train.jsonl
+!data/nsmc_sentiment_val.jsonl
+!data/nsmc_sentiment_test.jsonl
+
 # 과제 안내문 (로컬/Notion 전용, repo에 미포함)
 notion/
 
