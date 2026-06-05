@@ -333,8 +333,10 @@ class TestRunnerWiring:
                 captured["device"] = str(device)
                 return self
 
-            def load_state_dict(self, state_dict):
+            def load_state_dict(self, state_dict, strict=False):
                 captured["loaded_state_dict"] = state_dict
+                captured["load_state_dict_strict"] = strict
+                return [], []
 
         def fake_dataset(rows, tokenizer, max_length):
             captured["dataset_max_length"] = max_length
@@ -390,7 +392,7 @@ class TestRunnerWiring:
         ), mock.patch.object(
             run_test_eval, "evaluate_sentiment", side_effect=fake_evaluate
         ), mock.patch.object(
-            run_test_eval.torch, "load", return_value={"model_state_dict": {"ok": 1}}
+            run_test_eval.torch, "load", return_value={"model_state_dict": {"ok": 1, "gpt.trf_blocks.0.att.mask": 1}}
         ), mock.patch.object(
             run_test_eval, "write_timing_json"
         ) as timing_writer:
@@ -409,6 +411,8 @@ class TestRunnerWiring:
         assert captured["loader"]["persistent_workers"] is True
         assert captured["loader"]["pin_memory"] is False
         assert captured["classifier"]["drop_rate"] == 0.2
+        assert captured["load_state_dict_strict"] is False
+        assert "gpt.trf_blocks.0.att.mask" not in captured["loaded_state_dict"]
         assert captured["evaluate_called"] is True
         assert (artifact_dir / "test_metrics.json").exists()
         assert timing_writer.called

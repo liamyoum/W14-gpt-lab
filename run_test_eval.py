@@ -79,6 +79,27 @@ def write_timing_json(path: Path, timing: dict[str, float | int]) -> None:
         json.dump(timing, f, ensure_ascii=False, indent=2)
 
 
+def load_finetuned_checkpoint(
+    model: GPTForSequenceClassification,
+    checkpoint_path: Path,
+    device: torch.device,
+) -> None:
+    """동적 causal mask buffer 차이를 무시하고 분류기 checkpoint를 복원합니다."""
+    checkpoint = torch.load(checkpoint_path, map_location=device)
+    state_dict = {
+        key: value
+        for key, value in checkpoint["model_state_dict"].items()
+        if not key.endswith(".att.mask")
+    }
+    missing_keys, unexpected_keys = model.load_state_dict(state_dict, strict=False)
+    missing_keys = [key for key in missing_keys if not key.endswith(".att.mask")]
+    if missing_keys or unexpected_keys:
+        raise RuntimeError(
+            "finetune checkpoint와 현재 분류기 구조가 맞지 않습니다. "
+            f"missing_keys={missing_keys}, unexpected_keys={unexpected_keys}"
+        )
+
+
 def main() -> None:
     args = parse_args()
     if not args.vocab_path.exists():
@@ -114,8 +135,7 @@ def main() -> None:
     backbone = GPTModel(config)
     model = GPTForSequenceClassification(backbone, num_labels=2, drop_rate=args.drop_rate).to(device)
 
-    checkpoint = torch.load(args.finetuned_checkpoint, map_location=device)
-    model.load_state_dict(checkpoint["model_state_dict"])
+    load_finetuned_checkpoint(model, args.finetuned_checkpoint, device)
 
     eval_start = time.perf_counter()
     test_loss, test_acc = evaluate_sentiment(model, test_loader, device)
